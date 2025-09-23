@@ -1,3 +1,6 @@
+#define GGML_COMMON_DECL_C
+#include "ggml-common.h"
+
 #include "zdnn.h"
 #include "ggml-zdnn.h"
 #include "ggml-zdnn-impl.h"
@@ -54,12 +57,20 @@ inline void ggml_zdnn_load_tensor(zdnn_ztensor & ztensor,
 }
 
 inline void ggml_zdnn_init_tensor(ggml_backend_zdnn_buffer * buffer, const ggml_tensor * tensor) {
+    // Determine the zDNN data type upfront.
+    // If the original ggml type is Q8_0, we tell zDNN to treat it as BFLOAT,
+    // because our code will dequantize it before zDNN ever sees the data.
+    zdnn_data_types zdnn_type = (tensor->type == GGML_TYPE_Q8_0)
+                              ? BFLOAT
+                              : ggml_zdnn_type_mapping(tensor->type);
+
     switch (tensor->op) {
         case GGML_OP_MUL_MAT:
             {
+                // Use the determined zdnn_type here for the pre-transformed descriptor
                 zdnn_init_pre_transformed_desc(
                     ZDNN_2D,
-                    ggml_zdnn_type_mapping(tensor->type),
+                    zdnn_type,
                     &buffer->pre_tfm_desc,
                     tensor->ne[1], tensor->ne[0]
                 );
@@ -73,19 +84,57 @@ inline void ggml_zdnn_init_tensor(ggml_backend_zdnn_buffer * buffer, const ggml_
                 // layout and reshaping the tensor.
                 zdnn_init_pre_transformed_desc(
                     ZDNN_NHWC,
-                    ggml_zdnn_type_mapping(tensor->type),
+                    zdnn_type,
                     &buffer->pre_tfm_desc,
                     tensor->ne[3], tensor->ne[2], tensor->ne[1], tensor->ne[0]
                 );
-
-                // TODO: Consider adding a ggml check.
-                // TODO: If tensor = 4D, use ZDNN_NCHW by default.
-                // TODO: If tensor = 2D, use ZDNN_NHWC by default.
             } break;
     }
 
-    ZDNN_CHECK(zdnn_generate_transformed_desc(&buffer->pre_tfm_desc, &buffer->tfm_desc));
-    ZDNN_CHECK(zdnn_init_ztensor_with_malloc(&buffer->pre_tfm_desc, &buffer->tfm_desc, &buffer->ztensor));
+    switch (tensor->type) {
+        case GGML_TYPE_F32:
+        case GGML_TYPE_F16:
+        case GGML_TYPE_BF16:
+        case GGML_TYPE_Q8_0:
+            {
+                // All of these types will be transformed into zDNN's internal,
+                // highly optimized DLFLOAT16 format.
+                zdnn_generate_quantized_transformed_desc(
+                    &buffer->pre_tfm_desc,
+                    QUANTIZED_DLFLOAT16,
+                    &buffer->tfm_desc);
+                zdnn_init_quantized_ztensor_with_malloc(
+                    &buffer->pre_tfm_desc,
+                    &buffer->tfm_desc,
+                    1.0f, 
+                    0.0f,
+                    &buffer->ztensor);
+            } break;
+
+        default:
+            {
+                GGML_LOG_ERROR("%s: unsupported type %s\n",
+                               __func__, ggml_type_name(tensor->type));
+                break;
+            }
+    }
+}
+//This function dequantize the tensor to bfloat 16 which is compatible with zdnn Dfloat16
+void dequantize_q8_0_to_bf16(const ggml_tensor *tensor, ggml_bf16_t *dst) {
+    const int64_t n_elements = ggml_nelements(tensor);
+    const int64_t n_blocks = n_elements / QK8_0;
+    const block_q8_0 *src_blocks = (const block_q8_0 *)tensor->data;
+
+    for (int64_t i = 0; i < n_blocks; ++i) {
+        // Convert the block's fp16 scale to a float
+        const float d = ggml_fp16_to_fp32(src_blocks[i].d);
+        for (int j = 0; j < QK8_0; ++j) {
+            // Dequantize: real_value = scale * quantized_value
+            const float val_fp32 = d * src_blocks[i].qs[j];
+            // Convert the final float value to BFLOAT16 and store it
+            dst[i * QK8_0 + j] = ggml_fp32_to_bf16(val_fp32);
+        }
+    }
 }
 
 static void ggml_zdnn_mul_mat_op(ggml_backend_zdnn_context * ctx, const ggml_tensor * src0, const ggml_tensor * src1, ggml_tensor * dst) {
@@ -133,8 +182,29 @@ static void ggml_zdnn_mul_mat_op(ggml_backend_zdnn_context * ctx, const ggml_ten
     ggml_zdnn_create_tensor(ptd_bias, td_bias, zt_bias, output, bias_dim, ZDNN_1D);
 
     void * bias_data = (void *)calloc(ne0, ggml_element_size(output));
-    if (weights_extra->ztensor.is_transformed == false) ggml_zdnn_load_tensor(weights_extra->ztensor, weights->data);
-    if (inputs_extra->ztensor.is_transformed == false) ggml_zdnn_load_tensor(inputs_extra->ztensor, inputs->data);
+    // if (weights_extra->ztensor.is_transformed == false) ggml_zdnn_load_tensor(weights_extra->ztensor, weights->data);
+    // if (inputs_extra->ztensor.is_transformed == false) ggml_zdnn_load_tensor(inputs_extra->ztensor, inputs->data);
+    // weights dequantize 
+        if (weights_extra->ztensor.is_transformed == false) {
+            if (weights->type == GGML_TYPE_Q8_0) {
+                // For Q8_0, we must dequantize to a float format first.
+                const int64_t n_elements = ggml_nelements(weights);
+                ggml_bf16_t *dequantized_weights = (ggml_bf16_t *)malloc(n_elements * sizeof(ggml_bf16_t));
+                GGML_ASSERT(dequantized_weights);
+                dequantize_q8_0_to_bf16(weights, dequantized_weights);
+                // Load the newly dequantized BFLOAT data into the zTensor
+                ggml_zdnn_load_tensor(weights_extra->ztensor, dequantized_weights);
+                free(dequantized_weights);
+            } else {
+                // For other float types, load directly
+                ggml_zdnn_load_tensor(weights_extra->ztensor, weights->data);
+            }
+        }
+    
+        if (inputs_extra->ztensor.is_transformed == false) {
+            ggml_zdnn_load_tensor(inputs_extra->ztensor, inputs->data);
+        }
+        
     ggml_zdnn_load_tensor(zt_bias, bias_data);
 
     // GGML_LOG_INFO("%s: tensor '%s' tensor dimensions: [%ld, %ld, %ld, %ld] pre_tfm_desc dimensions: [%ld, %ld, %ld, %ld]\n",
@@ -200,17 +270,24 @@ static void ggml_zdnn_mul_mat_dispatch(ggml_backend_zdnn_context * ctx, const gg
         // ggml_zdnn_mul_mat_batched(ctx, src0, src1, dst);
     } else if (use_mul_mat_vec) {
         GGML_LOG_INFO("%s: using zdnn_op_mul_mat_vec for vector multiplication\n", __func__);
+        // ggml_zdnn_mul_mat_op_q(ctx, src0, src1, dst);
         // ggml_zdnn_op_mul_mat(ctx, src0, src1, dst, ggml_zdnn_op_mul_mat_vec, nullptr);
-    } else if (use_mul_mat_vec_q) {
-        GGML_LOG_INFO("%s: using zdnn_op_mul_mat_vec_q for quantized vector multiplication\n", __func__);
-        // ggml_zdnn_op_mul_mat(ctx, src0, src1, dst, ggml_zdnn_op_mul_mat_vec_q, ggml_zdnn_quantize_row_q8_1);
+        ggml_zdnn_mul_mat_op(ctx, src0, src1, dst);
     } else if (use_mul_mat_q) {
         GGML_LOG_INFO("%s: using zdnn_op_mul_mat_q for quantized matrix multiplication\n", __func__);
         // ggml_zdnn_op_mul_mat(ctx, src0, src1, dst, ggml_zdnn_op_mul_mat_q, ggml_zdnn_quantize_mmq_q8_1);
+        // ggml_zdnn_mul_mat_op_q(ctx, src0, src1, dst);
+        ggml_zdnn_mul_mat_op(ctx, src0, src1, dst);
+        
+    } else if (use_mul_mat_vec_q) {
+        GGML_LOG_INFO("%s: using zdnn_op_mul_mat_vec_q for quantized vector multiplication\n", __func__);
+        // ggml_zdnn_op_mul_mat(ctx, src0, src1, dst, ggml_zdnn_op_mul_mat_vec_q, ggml_zdnn_quantize_row_q8_1);
     } else {
         // GGML_LOG_INFO("%s: using zdnn_op_mul_mat for general matrix multiplication\n", __func__);
         ggml_zdnn_mul_mat_op(ctx, src0, src1, dst);
     }
+
+    // ggml_zdnn_mul_mat_op(ctx, src0, src1, dst);
 }
 
 static bool ggml_zdnn_compute_forward(ggml_backend_zdnn_context * ctx, ggml_tensor * dst) {
@@ -280,7 +357,7 @@ static bool ggml_zdnn_supports_op(const ggml_backend_zdnn_device_context * ctx_d
                        ggml_is_contiguous(src0) &&
                        ggml_is_contiguous(src1) &&
                        src0->view_src == nullptr && src1->view_src == nullptr &&
-                       src0->type == GGML_TYPE_F32 && src1->type == GGML_TYPE_F32 &&
+                       ((src0->type == GGML_TYPE_F32||ggml_is_quantized(src0->type)) && src1->type == GGML_TYPE_F32)&&
                        (ne0 <= max_batch && ne1 <= max_batch && ne10 <= max_batch);
             } break;
 
