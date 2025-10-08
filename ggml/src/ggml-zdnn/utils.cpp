@@ -44,12 +44,18 @@ void ggml_zdnn_load_tensor(zdnn_ztensor & ztensor, void * buffer) {
 }
 
 void ggml_zdnn_init_tensor(ggml_backend_zdnn_buffer * buffer, const ggml_tensor * tensor) {
+    // Determine the zDNN data type upfront.
+    // If the original ggml type is Q8_0, we tell zDNN to treat it as BFLOAT,
+    // because our code will dequantize it before zDNN ever sees the data.
+    zdnn_data_types zdnn_type = (tensor->type == GGML_TYPE_Q8_0)
+                              ? BFLOAT
+                              : ggml_zdnn_type_mapping(tensor->type);
     switch (tensor->op) {
         case GGML_OP_MUL_MAT:
             {
                 zdnn_init_pre_transformed_desc(
                     ZDNN_2D,
-                    ggml_zdnn_type_mapping(tensor->type),
+                    zdnn_type,
                     &buffer->pre_tfm_desc,
                     tensor->ne[1], tensor->ne[0]
                 );
@@ -74,6 +80,55 @@ void ggml_zdnn_init_tensor(ggml_backend_zdnn_buffer * buffer, const ggml_tensor 
             } break;
     }
 
-    ZDNN_CHECK(zdnn_generate_transformed_desc(&buffer->pre_tfm_desc, &buffer->tfm_desc));
-    ZDNN_CHECK(zdnn_init_ztensor_with_malloc(&buffer->pre_tfm_desc, &buffer->tfm_desc, &buffer->ztensor));
+    switch (tensor->type) {
+        case GGML_TYPE_F32:
+        case GGML_TYPE_F16:
+        case GGML_TYPE_BF16:
+        {
+            ZDNN_CHECK(zdnn_generate_transformed_desc(&buffer->pre_tfm_desc, &buffer->tfm_desc));
+            ZDNN_CHECK(zdnn_init_ztensor_with_malloc(&buffer->pre_tfm_desc, &buffer->tfm_desc, &buffer->ztensor));
+            break;
+        }
+        case GGML_TYPE_Q8_0:
+            {
+                // All of these types will be transformed into zDNN's internal,
+                // highly optimized DLFLOAT16 format.
+                zdnn_generate_quantized_transformed_desc(
+                    &buffer->pre_tfm_desc,
+                    QUANTIZED_DLFLOAT16,
+                    &buffer->tfm_desc);
+                zdnn_init_quantized_ztensor_with_malloc(
+                    &buffer->pre_tfm_desc,
+                    &buffer->tfm_desc,
+                    1.0f,
+                    0.0f,
+                    &buffer->ztensor);
+                break;
+            }
+
+        default:
+            {
+                GGML_LOG_ERROR("%s: unsupported type %s\n",
+                               __func__, ggml_type_name(tensor->type));
+                break;
+            }
+    }
+}
+
+//This function dequantize the tensor to bfloat 16 which is compatible with zdnn Dfloat16
+void dequantize_q8_0_to_bf16(const ggml_tensor *tensor, ggml_bf16_t *dst) {
+    const int64_t n_elements = ggml_nelements(tensor);
+    const int64_t n_blocks = n_elements / QK8_0;
+    const block_q8_0 *src_blocks = (const block_q8_0 *)tensor->data;
+
+    for (int64_t i = 0; i < n_blocks; ++i) {
+        // Convert the block's fp16 scale to a float
+        const float d = ggml_fp16_to_fp32(src_blocks[i].d);
+        for (int j = 0; j < QK8_0; ++j) {
+            // Dequantize: real_value = scale * quantized_value
+            const float val_fp32 = d * src_blocks[i].qs[j];
+            // Convert the final float value to BFLOAT16 and store it
+            dst[i * QK8_0 + j] = ggml_fp32_to_bf16(val_fp32);
+        }
+    }
 }

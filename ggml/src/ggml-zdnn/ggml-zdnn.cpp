@@ -103,6 +103,7 @@ static bool ggml_zdnn_supports_op(const ggml_backend_zdnn_device_context * ctx_d
                     case GGML_TYPE_F32:
                     case GGML_TYPE_F16:
                     case GGML_TYPE_BF16:
+                    case GGML_TYPE_Q8_0:
                         return true;
                     default:
                         return false;
@@ -285,6 +286,21 @@ static void ggml_backend_zdnn_buffer_set_tensor(ggml_backend_buffer_t buffer, gg
     // Fixes the LLAMA_SET_ROWS bug
     // see: https://github.com/ggml-org/llama.cpp/issues/15414
     if (tensor->buffer->usage == GGML_BACKEND_BUFFER_USAGE_COMPUTE && extra->ztensor.is_transformed) zdnn_reset_ztensor(&extra->ztensor);
+    if (tensor->buffer->usage == GGML_BACKEND_BUFFER_USAGE_WEIGHTS && extra->ztensor.is_transformed== false){
+        if (weights->type == GGML_TYPE_Q8_0) {
+            // For Q8_0, we must dequantize to a float format first.
+            const int64_t n_elements = ggml_nelements(weights);
+            ggml_bf16_t *dequantized_weights = (ggml_bf16_t *)malloc(n_elements * sizeof(ggml_bf16_t));
+            GGML_ASSERT(dequantized_weights);
+            dequantize_q8_0_to_bf16(weights, dequantized_weights);
+            // Load the newly dequantized BFLOAT data into the zTensor
+            ggml_zdnn_load_tensor(weights_extra->ztensor, dequantized_weights);
+            free(dequantized_weights);
+        } else {
+            // For other float types, load directly
+            ggml_zdnn_load_tensor(weights_extra->ztensor, weights->data);
+        }
+    }
     if (extra->ztensor.is_transformed == false) ggml_zdnn_load_tensor(extra->ztensor, tensor->data);
 
     GGML_UNUSED(buffer);
