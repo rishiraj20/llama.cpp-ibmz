@@ -1,3 +1,5 @@
+#define GGML_COMMON_DECL_C
+#include "ggml-common.h"
 #include "ggml.h"
 #include "utils.hpp"
 
