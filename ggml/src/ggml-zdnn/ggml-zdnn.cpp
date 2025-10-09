@@ -299,7 +299,7 @@ static void ggml_backend_zdnn_buffer_set_tensor(ggml_backend_buffer_t buffer, gg
             free(dequantized_weights);
         } else {
             // For other float types, load directly
-            ggml_zdnn_load_tensor(weights_extra->ztensor, weights->data);
+            ggml_zdnn_load_tensor(extra->ztensor, tensor->data);
         }
     }
     if (extra->ztensor.is_transformed == false) ggml_zdnn_load_tensor(extra->ztensor, tensor->data);
