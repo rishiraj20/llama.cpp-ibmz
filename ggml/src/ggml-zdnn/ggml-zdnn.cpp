@@ -294,7 +294,7 @@ static void ggml_backend_zdnn_buffer_set_tensor(ggml_backend_buffer_t buffer, gg
         if (tensor->type == GGML_TYPE_Q8_0) {
             // For Q8_0, we must dequantize to a bf16 format first.
             const int64_t n_elements = ggml_nelements(tensor);
-            GGML_LOG_INFO("%s: dequantizing %lld Q8_0 elements to BF16 for zDNN\n", __func__, (long long)n_elements);
+            //GGML_LOG_INFO("%s: dequantizing %lld Q8_0 elements to BF16 for zDNN\n", __func__, (long long)n_elements);
 
             // Use std::vector for safer, exception-safe memory management
             std::vector<ggml_bf16_t> dequantized_weights(n_elements);
