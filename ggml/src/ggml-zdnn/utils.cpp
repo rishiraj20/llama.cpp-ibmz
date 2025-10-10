@@ -41,7 +41,7 @@ void ggml_zdnn_create_tensor(zdnn_tensor_desc  & pre_tfm_desc,
     ZDNN_CHECK(zdnn_init_ztensor_with_malloc(&pre_tfm_desc, &tfm_desc, &ztensor));
 }
 
-void ggml_zdnn_load_tensor(zdnn_ztensor & ztensor, const void * buffer) {
+void ggml_zdnn_load_tensor(zdnn_ztensor & ztensor, void * buffer) {
     ZDNN_CHECK(zdnn_transform_ztensor(&ztensor, buffer));
 }
 
