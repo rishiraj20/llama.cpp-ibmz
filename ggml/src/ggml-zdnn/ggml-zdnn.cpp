@@ -283,24 +283,19 @@ static void ggml_backend_zdnn_buffer_set_tensor(ggml_backend_buffer_t buffer, gg
 
     ggml_backend_zdnn_buffer * extra = (ggml_backend_zdnn_buffer *)tensor->extra;
 
-    // Reset transformed zTensor if it's a compute buffer (e.g. activations) that's being updated.
+    // Fixes the LLAMA_SET_ROWS bug
+    // see: https://github.com/ggml-org/llama.cpp/issues/15414
     if (tensor->buffer->usage == GGML_BACKEND_BUFFER_USAGE_COMPUTE && extra->ztensor.is_transformed) {
         zdnn_reset_ztensor(&extra->ztensor);
     }
 
-    // Only transform the zTensor if it hasn't been transformed already.
-    // This is primarily for weights, which are loaded once at the beginning.
     if (!extra->ztensor.is_transformed) {
         if (tensor->type == GGML_TYPE_Q8_0) {
             // For Q8_0, we must dequantize to a bf16 format first.
             const int64_t n_elements = ggml_nelements(tensor);
             //GGML_LOG_INFO("%s: dequantizing %lld Q8_0 elements to BF16 for zDNN\n", __func__, (long long)n_elements);
-
-            // Use std::vector for safer, exception-safe memory management
             std::vector<ggml_bf16_t> dequantized_weights(n_elements);
-
             dequantize_q8_0_to_bf16(tensor, dequantized_weights.data());
-
             // Load the newly dequantized BFLOAT data into the zTensor
             ggml_zdnn_load_tensor(extra->ztensor, dequantized_weights.data());
         } else {

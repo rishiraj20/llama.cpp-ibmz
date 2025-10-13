@@ -10,9 +10,8 @@ zdnn_data_types ggml_zdnn_type_mapping(ggml_type type) {
         case GGML_TYPE_F16:
             return FP16;
         case GGML_TYPE_BF16:
+        case GGML_TYPE_Q8_0: 
             return BFLOAT;
-        case GGML_TYPE_Q8_0:
-            return INT8;
         case GGML_TYPE_I8:
             return INT8;
         case GGML_TYPE_I32:
@@ -49,9 +48,11 @@ void ggml_zdnn_init_tensor(ggml_backend_zdnn_buffer * buffer, const ggml_tensor 
     // Determine the zDNN data type upfront.
     // If the original ggml type is Q8_0, we tell zDNN to treat it as BFLOAT,
     // because our code will dequantize it to BFLOAT before zDNN ever sees the data.
-    zdnn_data_types zdnn_type = (tensor->type == GGML_TYPE_Q8_0)
-                              ? BFLOAT
-                              : ggml_zdnn_type_mapping(tensor->type);
+    //zdnn_data_types zdnn_type = (tensor->type == GGML_TYPE_Q8_0)
+    //                          ? BFLOAT
+    //                          : ggml_zdnn_type_mapping(tensor->type);
+
+    zdnn_data_types zdnn_type = ggml_zdnn_type_mapping(tensor->type);
     switch (tensor->op) {
         case GGML_OP_MUL_MAT:
             {
