@@ -25,6 +25,20 @@ class Keys:
         ALIGNMENT                  = "general.alignment"
         FILE_TYPE                  = "general.file_type"
 
+        # Recommended Sampler Parameters
+        SAMPLING_SEQUENCE           = "general.sampling.sequence"
+        SAMPLING_TOP_K              = "general.sampling.top_k"
+        SAMPLING_TOP_P              = "general.sampling.top_p"
+        SAMPLING_MIN_P              = "general.sampling.min_p"
+        SAMPLING_XTC_PROBABILITY    = "general.sampling.xtc_probability"
+        SAMPLING_XTC_THRESHOLD      = "general.sampling.xtc_threshold"
+        SAMPLING_TEMP               = "general.sampling.temp"
+        SAMPLING_PENALTY_LAST_N     = "general.sampling.penalty_last_n"
+        SAMPLING_PENALTY_REPEAT     = "general.sampling.penalty_repeat"
+        SAMPLING_MIROSTAT           = "general.sampling.mirostat"
+        SAMPLING_MIROSTAT_TAU       = "general.sampling.mirostat_tau"
+        SAMPLING_MIROSTAT_ETA       = "general.sampling.mirostat_eta"
+
         # Authorship Metadata
         NAME                       = "general.name"
         AUTHOR                     = "general.author"
@@ -409,6 +423,7 @@ class MODEL_ARCH(IntEnum):
     BAILINGMOE2      = auto()
     DOTS1            = auto()
     ARCEE            = auto()
+    AFMOE            = auto()
     ERNIE4_5         = auto()
     ERNIE4_5_MOE     = auto()
     HUNYUAN_MOE      = auto()
@@ -426,6 +441,7 @@ class MODEL_ARCH(IntEnum):
     APERTUS          = auto()
     COGVLM           = auto()
     MINIMAXM2        = auto()
+    RND1             = auto()
     PANGU_EMBED      = auto()
 
 
@@ -464,6 +480,7 @@ class MODEL_TENSOR(IntEnum):
     ATTN_POST_NORM       = auto()
     ATTN_ROT_EMBD        = auto()
     ATTN_SINKS           = auto()
+    ATTN_GATE            = auto()
     FFN_GATE_INP         = auto()
     FFN_GATE_INP_SHEXP   = auto()
     FFN_NORM             = auto()
@@ -776,6 +793,7 @@ MODEL_ARCH_NAMES: dict[MODEL_ARCH, str] = {
     MODEL_ARCH.BAILINGMOE2:      "bailingmoe2",
     MODEL_ARCH.DOTS1:            "dots1",
     MODEL_ARCH.ARCEE:            "arcee",
+    MODEL_ARCH.AFMOE:            "afmoe",
     MODEL_ARCH.ERNIE4_5:         "ernie4_5",
     MODEL_ARCH.ERNIE4_5_MOE:     "ernie4_5-moe",
     MODEL_ARCH.FALCON_H1:        "falcon-h1",
@@ -794,6 +812,7 @@ MODEL_ARCH_NAMES: dict[MODEL_ARCH, str] = {
     MODEL_ARCH.APERTUS:          "apertus",
     MODEL_ARCH.MINIMAXM2:        "minimax-m2",
     MODEL_ARCH.COGVLM:           "cogvlm",
+    MODEL_ARCH.RND1:             "rnd1",
     MODEL_ARCH.PANGU_EMBED:      "pangu-embedded",
 }
 
@@ -828,6 +847,7 @@ TENSOR_NAMES: dict[MODEL_TENSOR, str] = {
     MODEL_TENSOR.ATTN_OUT:                  "blk.{bid}.attn_output",
     MODEL_TENSOR.ATTN_ROT_EMBD:             "blk.{bid}.attn_rot_embd",
     MODEL_TENSOR.ATTN_SINKS:                "blk.{bid}.attn_sinks",
+    MODEL_TENSOR.ATTN_GATE:                 "blk.{bid}.attn_gate",
     MODEL_TENSOR.ATTN_Q_NORM:               "blk.{bid}.attn_q_norm",
     MODEL_TENSOR.ATTN_K_NORM:               "blk.{bid}.attn_k_norm",
     MODEL_TENSOR.ATTN_OUT_NORM:             "blk.{bid}.attn_output_norm",
@@ -2693,6 +2713,33 @@ MODEL_TENSORS: dict[MODEL_ARCH, list[MODEL_TENSOR]] = {
         MODEL_TENSOR.FFN_DOWN,
         MODEL_TENSOR.FFN_UP,
     ],
+    MODEL_ARCH.AFMOE: [
+        MODEL_TENSOR.TOKEN_EMBD,
+        MODEL_TENSOR.OUTPUT_NORM,
+        MODEL_TENSOR.OUTPUT,
+        MODEL_TENSOR.ATTN_NORM,
+        MODEL_TENSOR.ATTN_POST_NORM,
+        MODEL_TENSOR.ATTN_Q,
+        MODEL_TENSOR.ATTN_K,
+        MODEL_TENSOR.ATTN_V,
+        MODEL_TENSOR.ATTN_OUT,
+        MODEL_TENSOR.ATTN_Q_NORM,
+        MODEL_TENSOR.ATTN_K_NORM,
+        MODEL_TENSOR.ATTN_GATE,
+        MODEL_TENSOR.FFN_GATE,
+        MODEL_TENSOR.FFN_DOWN,
+        MODEL_TENSOR.FFN_UP,
+        MODEL_TENSOR.FFN_GATE_INP,
+        MODEL_TENSOR.FFN_GATE_EXP,
+        MODEL_TENSOR.FFN_DOWN_EXP,
+        MODEL_TENSOR.FFN_UP_EXP,
+        MODEL_TENSOR.FFN_GATE_SHEXP,
+        MODEL_TENSOR.FFN_UP_SHEXP,
+        MODEL_TENSOR.FFN_DOWN_SHEXP,
+        MODEL_TENSOR.FFN_PRE_NORM,
+        MODEL_TENSOR.FFN_POST_NORM,
+        MODEL_TENSOR.FFN_EXP_PROBS_B,
+    ],
     MODEL_ARCH.ERNIE4_5: [
         MODEL_TENSOR.TOKEN_EMBD,
         MODEL_TENSOR.OUTPUT_NORM,
@@ -2959,6 +3006,23 @@ MODEL_TENSORS: dict[MODEL_ARCH, list[MODEL_TENSOR]] = {
         MODEL_TENSOR.VISEXP_GATE,
         MODEL_TENSOR.VISEXP_UP,
         MODEL_TENSOR.VISEXP_DOWN,
+    ],
+    MODEL_ARCH.RND1: [
+        MODEL_TENSOR.TOKEN_EMBD,
+        MODEL_TENSOR.OUTPUT_NORM,
+        MODEL_TENSOR.OUTPUT,
+        MODEL_TENSOR.ATTN_NORM,
+        MODEL_TENSOR.ATTN_Q,
+        MODEL_TENSOR.ATTN_Q_NORM,
+        MODEL_TENSOR.ATTN_K,
+        MODEL_TENSOR.ATTN_K_NORM,
+        MODEL_TENSOR.ATTN_V,
+        MODEL_TENSOR.ATTN_OUT,
+        MODEL_TENSOR.FFN_NORM,
+        MODEL_TENSOR.FFN_GATE_INP,
+        MODEL_TENSOR.FFN_GATE_EXP,
+        MODEL_TENSOR.FFN_DOWN_EXP,
+        MODEL_TENSOR.FFN_UP_EXP,
     ],
     MODEL_ARCH.PANGU_EMBED: [
         MODEL_TENSOR.TOKEN_EMBD,

@@ -57,6 +57,10 @@ struct llm_build_rwkv7_base : public llm_graph_context {
                                        int                  il) const;
 };
 
+struct llm_build_afmoe : public llm_graph_context {
+    llm_build_afmoe(const llama_model & model, const llm_graph_params & params);
+};
+
 struct llm_build_apertus : public llm_graph_context {
     llm_build_apertus(const llama_model & model, const llm_graph_params & params);
 };
@@ -425,6 +429,10 @@ struct llm_build_qwen : public llm_graph_context {
 
 struct llm_build_refact : public llm_graph_context {
     llm_build_refact(const llama_model & model, const llm_graph_params & params);
+};
+
+struct llm_build_rnd1 : public llm_graph_context {
+    llm_build_rnd1(const llama_model & model, const llm_graph_params & params);
 };
 
 struct llm_build_rwkv6 : public llm_build_rwkv6_base {
