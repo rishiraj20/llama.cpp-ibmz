@@ -295,7 +295,7 @@ static void ggml_backend_zdnn_buffer_set_tensor(ggml_backend_buffer_t buffer, gg
             const int64_t n_elements = ggml_nelements(tensor);
             //GGML_LOG_INFO("%s: dequantizing %lld Q8_0 elements to BF16 for zDNN\n", __func__, (long long)n_elements);
             std::vector<ggml_bf16_t> dequantized_weights(n_elements);
-            dequantize_q8_0_to_bf16(tensor, dequantized_weights.data());
+            dequantize_q8_0_to_bf16(tensor, dequantized_weights.data(), dequantized_weights.size() * sizeof(ggml_bf16_t));
             // Load the newly dequantized BFLOAT data into the zTensor
             ggml_zdnn_load_tensor(extra->ztensor, dequantized_weights.data());
         } else {

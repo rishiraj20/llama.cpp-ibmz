@@ -15,6 +15,7 @@ void ggml_zdnn_create_tensor(zdnn_tensor_desc & pre_tfm_desc,
 void ggml_zdnn_load_tensor(zdnn_ztensor & ztensor, void * buffer);
 
 void ggml_zdnn_init_tensor(ggml_backend_zdnn_buffer * buffer, const ggml_tensor * tensor);
-void dequantize_q8_0_to_bf16(const ggml_tensor *tensor, ggml_bf16_t *dst);
+
+void dequantize_q8_0_to_bf16(const ggml_tensor *tensor, ggml_bf16_t *dst, size_t dst_size);
 
 #endif  // GGML_ZDNN_UTILITIES_HPP

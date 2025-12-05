@@ -1,4 +1,4 @@
-#define GGML_COMMON_DECL_C
+#define GGML_COMMON_DECL_CPP
 #include "ggml-common.h"
 #include "ggml.h"
 #include "utils.hpp"
@@ -45,13 +45,6 @@ void ggml_zdnn_load_tensor(zdnn_ztensor & ztensor, void * buffer) {
 }
 
 void ggml_zdnn_init_tensor(ggml_backend_zdnn_buffer * buffer, const ggml_tensor * tensor) {
-    // Determine the zDNN data type upfront.
-    // If the original ggml type is Q8_0, we tell zDNN to treat it as BFLOAT,
-    // because our code will dequantize it to BFLOAT before zDNN ever sees the data.
-    //zdnn_data_types zdnn_type = (tensor->type == GGML_TYPE_Q8_0)
-    //                          ? BFLOAT
-    //                          : ggml_zdnn_type_mapping(tensor->type);
-
     zdnn_data_types zdnn_type = ggml_zdnn_type_mapping(tensor->type);
     switch (tensor->op) {
         case GGML_OP_MUL_MAT:
@@ -71,10 +64,6 @@ void ggml_zdnn_init_tensor(ggml_backend_zdnn_buffer * buffer, const ggml_tensor 
                 // directly to avoid the performance penalty changing the
                 // layout and reshaping the tensor.
                 //
-                // --- FIX ---
-                // Always use the `zdnn_type` variable here. The original code used
-                // `ggml_zdnn_type_mapping(tensor->type)` which incorrectly set the
-                // pre-transformed type to INT8 for Q8_0 tensors.
                 zdnn_init_pre_transformed_desc(
                     ZDNN_NHWC,
                     zdnn_type,
@@ -99,19 +88,16 @@ void ggml_zdnn_init_tensor(ggml_backend_zdnn_buffer * buffer, const ggml_tensor 
         }
         case GGML_TYPE_Q8_0:
             {
-                // For Q8_0, the pre-transformed descriptor is already set to BFLOAT.
-                // zDNN will transform this BFLOAT data into its internal,
-                // highly optimized DLFLOAT16 format.
-                zdnn_generate_quantized_transformed_desc(
+                ZDNN_CHECK(zdnn_generate_quantized_transformed_desc(
                     &buffer->pre_tfm_desc,
                     QUANTIZED_DLFLOAT16,
-                    &buffer->tfm_desc);
-                zdnn_init_quantized_ztensor_with_malloc(
+                    &buffer->tfm_desc));
+                ZDNN_CHECK(zdnn_init_quantized_ztensor_with_malloc(
                     &buffer->pre_tfm_desc,
                     &buffer->tfm_desc,
                     1.0f,
                     0.0f,
-                    &buffer->ztensor);
+                    &buffer->ztensor));
                 break;
             }
 
@@ -124,9 +110,12 @@ void ggml_zdnn_init_tensor(ggml_backend_zdnn_buffer * buffer, const ggml_tensor 
     }
 }
 
-// This function dequantizes the tensor to bfloat16 which is compatible with zDNN's DLFLOAT16 format.
-void dequantize_q8_0_to_bf16(const ggml_tensor *tensor, ggml_bf16_t *dst) {
+void dequantize_q8_0_to_bf16(const ggml_tensor *tensor, ggml_bf16_t *dst, size_t dst_size) {
     const int64_t n_elements = ggml_nelements(tensor);
+    const size_t required_size = n_elements * sizeof(ggml_bf16_t);
+
+    GGML_ASSERT(dst_size >= required_size && "Destination buffer is too small for dequantization");
+
     const int64_t n_blocks = n_elements / QK8_0;
     const block_q8_0 *src_blocks = (const block_q8_0 *)tensor->data;
 
